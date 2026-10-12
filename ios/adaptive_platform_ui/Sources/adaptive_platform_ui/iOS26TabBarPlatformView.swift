@@ -2,11 +2,16 @@ import Flutter
 import UIKit
 
 private final class LayoutAwareTabBarContainerView: UIView {
+    var gradientLayer: CAGradientLayer?
+    var onTraitChange: (() -> Void)?
     var onWidthChanged: ((CGFloat) -> Void)?
     private var lastReportedWidth: CGFloat = 0
 
     override func layoutSubviews() {
         super.layoutSubviews()
+
+        // Match container bounds so the gradient doesn't get clipped by Flutter's PlatformView wrapper
+        gradientLayer?.frame = bounds
 
         guard window != nil else { return }
 
@@ -17,12 +22,21 @@ private final class LayoutAwareTabBarContainerView: UIView {
         lastReportedWidth = width
         onWidthChanged?(width)
     }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
+            onTraitChange?()
+        }
+    }
 }
 
 class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
     private let channel: FlutterMethodChannel
     private let container: LayoutAwareTabBarContainerView
     private var tabBar: UITabBar?
+    private var enableBlur: Bool = true
+    private var fadeColor: UIColor? = nil
     private var minimizeBehavior: Int = 3 // automatic
     private var currentLabels: [String] = []
     private var currentSymbols: [String] = []
@@ -99,6 +113,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         var tint: UIColor? = nil
         var bg: UIColor? = nil
         var minimize: Int = 3 // automatic
+        var blurEnabled: Bool = true
 
         var unselectedTint: UIColor? = nil
 
@@ -137,20 +152,27 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             }
             if let n = dict["backgroundColor"] as? NSNumber { bg = Self.colorFromARGB(n.intValue) }
             if let m = dict["minimizeBehavior"] as? NSNumber { minimize = m.intValue }
+            if let b = dict["enableBlur"] as? NSNumber { blurEnabled = b.boolValue }
+            if let n = dict["fadeColor"] as? NSNumber { self.fadeColor = Self.colorFromARGB(n.intValue) }
         }
 
         super.init()
+        self.enableBlur = blurEnabled
 
         container.backgroundColor = .clear
         if #available(iOS 13.0, *) {
             container.overrideUserInterfaceStyle = isDark ? .dark : .light
         }
 
+        if blurEnabled {
+            setupGradient()
+        }
 
         // Create single tab bar
         let bar = UITabBar(frame: .zero)
         tabBar = bar
         bar.delegate = self
+        bar.isTranslucent = true
         bar.translatesAutoresizingMaskIntoConstraints = false
         let semanticAttribute: UISemanticContentAttribute = isRtl
             ? .forceRightToLeft
@@ -163,20 +185,8 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         }
         container.semanticContentAttribute = semanticAttribute
 
-        // iOS 26+ special handling - Skip appearance, use direct properties only
-        if #available(iOS 26.0, *) {
-            // For iOS 26, we skip UITabBarAppearance as it interferes with custom colors
-            bar.isTranslucent = true
-            bar.backgroundImage = UIImage()
-            bar.shadowImage = UIImage()
-            bar.backgroundColor = .clear
-            NSLog("📱 iOS 26+ detected - using direct properties only")
-        }
-        // iOS 13-25 - Use appearance
-        else if #available(iOS 13.0, *) {
+        if #available(iOS 13.0, *) {
             let appearance = UITabBarAppearance()
-
-            // Make transparent
             appearance.configureWithTransparentBackground()
             appearance.backgroundColor = .clear
             appearance.shadowColor = .clear
@@ -205,8 +215,6 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             if #available(iOS 15.0, *) {
                 bar.scrollEdgeAppearance = appearance
             }
-
-            NSLog("🎨 iOS 13-25: Applied appearance - normal: \(unselColor), selected: \(selColor)")
         } else {
             // iOS 10-12 fallback
             bar.isTranslucent = true
@@ -623,6 +631,13 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
                 let c = Self.colorFromARGB(n.intValue)
                 self.tabBar?.barTintColor = c
             }
+            if let n = args["fadeColor"] as? NSNumber {
+                self.fadeColor = Self.colorFromARGB(n.intValue)
+                self.updateGradientColors()
+            } else if args.keys.contains("fadeColor") {
+                self.fadeColor = nil
+                self.updateGradientColors()
+            }
 
             result(nil)
 
@@ -635,6 +650,22 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
 
             if #available(iOS 13.0, *) {
                 self.container.overrideUserInterfaceStyle = isDark ? .dark : .light
+            }
+            self.updateGradientColors()
+            result(nil)
+
+        case "setEnableBlur":
+            guard let args = call.arguments as? [String: Any],
+                  let enable = (args["enableBlur"] as? NSNumber)?.boolValue else {
+                result(FlutterError(code: "bad_args", message: "Missing enableBlur", details: nil))
+                return
+            }
+
+            self.enableBlur = enable
+            if enable && self.container.gradientLayer == nil {
+                self.setupGradient()
+            } else {
+                self.container.gradientLayer?.isHidden = !enable
             }
             result(nil)
 
@@ -826,12 +857,47 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         }
     }
 
+    private func setupGradient() {
+        container.clipsToBounds = false
+
+        let gradientLayer = CAGradientLayer()
+        // Fade from bottom (opaque) to top (transparent), matching iOS26ToolbarPlatformView
+        gradientLayer.startPoint = CGPoint(x: 0.5, y: 1.0)
+        gradientLayer.endPoint = CGPoint(x: 0.5, y: 0.0)
+        container.layer.insertSublayer(gradientLayer, at: 0)
+        container.gradientLayer = gradientLayer
+        container.onTraitChange = { [weak self] in
+            self?.updateGradientColors()
+        }
+        updateGradientColors()
+    }
+
+    private func updateGradientColors() {
+        let isDarkMode: Bool
+        if #available(iOS 13.0, *) {
+            isDarkMode = container.overrideUserInterfaceStyle == .dark
+                || container.traitCollection.userInterfaceStyle == .dark
+        } else {
+            isDarkMode = false
+        }
+        let baseColor = self.fadeColor ?? (isDarkMode ? UIColor.black : UIColor.white)
+
+        // Smooth native gradient: bottom is nearly opaque (0.95), top is 100% transparent (0.0)
+        container.gradientLayer?.colors = [
+            baseColor.withAlphaComponent(1.0).cgColor,  // 0% - bottom of tab bar
+            baseColor.withAlphaComponent(0.9).cgColor,  // 35% - smooth curve
+            baseColor.withAlphaComponent(0.6).cgColor,  // 70% - fading
+            baseColor.withAlphaComponent(0.0).cgColor    // 100% - top of tab bar (completely transparent)
+        ]
+        container.gradientLayer?.locations = [0.0, 0.4, 0.8, 1.0]
+    }
+
     func view() -> UIView { container }
 
     func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
-        if let bar = self.tabBar, bar === tabBar, let items = bar.items, let idx = items.firstIndex(of: item) {
-            channel.invokeMethod("valueChanged", arguments: ["index": idx])
-        }
+        let idx = (item.tag >= 0) ? item.tag : (self.tabBar?.items?.firstIndex(of: item) ?? 0)
+        NSLog("🎯 [iOS26TabBar] didSelect tab at index: \(idx), title: \(item.title ?? "")")
+        channel.invokeMethod("valueChanged", arguments: ["index": idx])
     }
 
     private static func colorFromARGB(_ argb: Int) -> UIColor {

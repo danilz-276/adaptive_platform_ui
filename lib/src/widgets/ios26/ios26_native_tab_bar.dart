@@ -1,8 +1,10 @@
 import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
+
 import '../adaptive_scaffold.dart';
 
 /// Native iOS 26 tab bar using UITabBar platform view
@@ -19,6 +21,9 @@ class IOS26NativeTabBar extends StatefulWidget {
     this.minimizeBehavior = TabBarMinimizeBehavior.automatic,
     this.showNativeView = true,
     this.hidden = false,
+    this.enableBlur = true,
+    this.fadeColor,
+    this.isDark,
   });
 
   final List<AdaptiveNavigationDestination> destinations;
@@ -27,13 +32,24 @@ class IOS26NativeTabBar extends StatefulWidget {
   final Color? tint;
   final Color? unselectedItemTint;
   final Color? backgroundColor;
+
+  /// Custom base color for the Liquid Glass gradient fade.
+  /// When null, defaults to black in dark mode and white in light mode.
+  final Color? fadeColor;
   final double? height;
   final bool showNativeView;
+
+  /// Explicitly control dark/light appearance.
+  /// If null, derives from MediaQuery.platformBrightnessOf(context).
+  final bool? isDark;
 
   /// Whether the native tab bar is hidden.
   /// Use this to hide the tab bar when showing modal bottom sheets
   /// to prevent native platform views from bleeding through.
   final bool hidden;
+
+  /// Whether to enable native Liquid Glass blur effect behind the tab bar.
+  final bool enableBlur;
 
   /// Tab bar minimize behavior (iOS 26+)
   /// Controls how the tab bar minimizes when scrolling
@@ -67,9 +83,12 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
   List<int?>? _lastBadgeTextColors;
   TabBarMinimizeBehavior? _lastMinimizeBehavior;
   bool? _lastHidden;
+  bool? _lastEnableBlur;
+  int? _lastFadeColor;
 
   bool get _isDark =>
-      MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+      widget.isDark ??
+      (MediaQuery.platformBrightnessOf(context) == Brightness.dark);
   bool get _isRtl => Directionality.of(context) == TextDirection.rtl;
   Color? get _effectiveTint =>
       widget.tint ?? CupertinoTheme.of(context).primaryColor;
@@ -77,6 +96,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
   @override
   void didUpdateWidget(covariant IOS26NativeTabBar oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _syncBrightnessIfNeeded();
     _syncPropsToNativeIfNeeded();
   }
 
@@ -99,7 +119,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     Color resolvedColor = color;
     if (color is CupertinoDynamicColor) {
       // Resolve based on current brightness
-      final brightness = MediaQuery.platformBrightnessOf(context);
+      final brightness = _isDark ? Brightness.dark : Brightness.light;
       resolvedColor = brightness == Brightness.dark
           ? color.darkColor
           : color.color;
@@ -232,11 +252,14 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
         'isDark': _isDark,
         'isRtl': _isRtl,
         'minimizeBehavior': widget.minimizeBehavior.index,
+        'enableBlur': widget.enableBlur,
         if (_effectiveTint != null) 'tint': _colorToARGB(_effectiveTint!),
         if (widget.unselectedItemTint != null)
           'unselectedItemTint': _colorToARGB(widget.unselectedItemTint!),
         if (widget.backgroundColor != null)
           'backgroundColor': _colorToARGB(widget.backgroundColor!),
+        if (widget.fadeColor != null)
+          'fadeColor': _colorToARGB(widget.fadeColor!),
       };
 
       final platformView = widget.showNativeView
@@ -246,7 +269,9 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
               creationParamsCodec: const StandardMessageCodec(),
               onPlatformViewCreated: _onCreated,
               gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                Factory<TapGestureRecognizer>(() => TapGestureRecognizer()),
+                Factory<OneSequenceGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                ),
               },
             )
           : const SizedBox.shrink();
@@ -308,9 +333,13 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     _lastBg = widget.backgroundColor != null
         ? _colorToARGB(widget.backgroundColor!)
         : null;
+    _lastFadeColor = widget.fadeColor != null
+        ? _colorToARGB(widget.fadeColor!)
+        : null;
     _lastIsDark = _isDark;
     _lastIsRtl = _isRtl;
     _lastMinimizeBehavior = widget.minimizeBehavior;
+    _lastEnableBlur = widget.enableBlur;
     _requestIntrinsicSize();
     _cacheItems();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -343,6 +372,9 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     final bg = widget.backgroundColor != null
         ? _colorToARGB(widget.backgroundColor!)
         : null;
+    final fadeColor = widget.fadeColor != null
+        ? _colorToARGB(widget.fadeColor!)
+        : null;
 
     if (_lastIndex != idx) {
       await ch.invokeMethod('setSelectedIndex', {'index': idx});
@@ -361,6 +393,10 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     if (_lastBg != bg && bg != null) {
       style['backgroundColor'] = bg;
       _lastBg = bg;
+    }
+    if (_lastFadeColor != fadeColor) {
+      style['fadeColor'] = fadeColor;
+      _lastFadeColor = fadeColor;
     }
     if (style.isNotEmpty) {
       await ch.invokeMethod('setStyle', style);
@@ -451,6 +487,12 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
 
     // Hidden state update
     await _syncHiddenIfNeeded();
+
+    // Blur state update
+    if (_lastEnableBlur != widget.enableBlur) {
+      await ch.invokeMethod('setEnableBlur', {'enableBlur': widget.enableBlur});
+      _lastEnableBlur = widget.enableBlur;
+    }
   }
 
   Future<void> _syncBrightnessIfNeeded() async {
@@ -526,6 +568,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     final badgeCounts = widget.destinations.map((e) => e.badgeCount).toList();
 
     try {
+      await ch.invokeMethod('setEnableBlur', {'enableBlur': widget.enableBlur});
       await ch.invokeMethod('setItems', {
         'labels': labels,
         'sfSymbols': symbols,
@@ -553,6 +596,9 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
       }
       if (widget.backgroundColor != null) {
         style['backgroundColor'] = _colorToARGB(widget.backgroundColor!);
+      }
+      if (widget.fadeColor != null) {
+        style['fadeColor'] = _colorToARGB(widget.fadeColor!);
       }
       if (style.isNotEmpty) {
         await ch.invokeMethod('setStyle', style);

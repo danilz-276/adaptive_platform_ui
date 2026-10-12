@@ -469,25 +469,17 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
                   child: Opacity(opacity: opacity, child: child),
                 );
               },
-              child: widget.enableBlur
-                  ? IOS26NativeTabBar(
-                      destinations: widget.bottomNavigationBar!.items!,
-                      selectedIndex: widget.bottomNavigationBar!.selectedIndex!,
-                      onTap: widget.bottomNavigationBar!.onTap!,
-                      tint: CupertinoTheme.of(context).primaryColor,
-                      minimizeBehavior: widget.minimizeBehavior,
-                      showNativeView: showNativeView,
-                      hidden: widget.tabBarHidden,
-                    )
-                  : IOS26NativeTabBar(
-                      destinations: widget.bottomNavigationBar!.items!,
-                      selectedIndex: widget.bottomNavigationBar!.selectedIndex!,
-                      onTap: widget.bottomNavigationBar!.onTap!,
-                      tint: CupertinoTheme.of(context).primaryColor,
-                      minimizeBehavior: widget.minimizeBehavior,
-                      showNativeView: showNativeView,
-                      hidden: widget.tabBarHidden,
-                    ),
+              child: IOS26NativeTabBar(
+                destinations: widget.bottomNavigationBar!.items!,
+                selectedIndex: widget.bottomNavigationBar!.selectedIndex!,
+                onTap: widget.bottomNavigationBar!.onTap!,
+                tint: CupertinoTheme.of(context).primaryColor,
+                minimizeBehavior: widget.minimizeBehavior,
+                showNativeView: showNativeView,
+                hidden: widget.tabBarHidden,
+                enableBlur: widget.enableBlur,
+                fadeColor: widget.bottomNavigationBar!.fadeColor,
+              ),
             ),
           ),
       ],

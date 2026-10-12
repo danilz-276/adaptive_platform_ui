@@ -18,6 +18,7 @@ class IOS26ScaffoldLegacy extends StatefulWidget {
     this.leading,
     this.minimizeBehavior = TabBarMinimizeBehavior.automatic,
     this.enableBlur = true,
+    this.fadeColor,
     this.enableToolbarGradient = true,
     this.tabBarHidden = false,
     required this.children,
@@ -31,6 +32,9 @@ class IOS26ScaffoldLegacy extends StatefulWidget {
   final Widget? leading;
   final TabBarMinimizeBehavior minimizeBehavior;
   final bool enableBlur;
+
+  /// Custom base color for the Liquid Glass gradient fade.
+  final Color? fadeColor;
 
   /// @deprecated No longer used. iOS 26+ uses native scroll edge effects.
   /// This parameter is kept for backwards compatibility but has no effect.
@@ -177,23 +181,16 @@ class _IOS26ScaffoldLegacyState extends State<IOS26ScaffoldLegacy>
                       child: Opacity(opacity: opacity, child: child),
                     );
                   },
-                  child: widget.enableBlur
-                      ? IOS26NativeTabBar(
-                          destinations: widget.destinations,
-                          selectedIndex: widget.selectedIndex,
-                          onTap: widget.onDestinationSelected,
-                          tint: CupertinoTheme.of(context).primaryColor,
-                          minimizeBehavior: widget.minimizeBehavior,
-                          hidden: widget.tabBarHidden,
-                        )
-                      : IOS26NativeTabBar(
-                          destinations: widget.destinations,
-                          selectedIndex: widget.selectedIndex,
-                          onTap: widget.onDestinationSelected,
-                          tint: CupertinoTheme.of(context).primaryColor,
-                          minimizeBehavior: widget.minimizeBehavior,
-                          hidden: widget.tabBarHidden,
-                        ),
+                  child: IOS26NativeTabBar(
+                    destinations: widget.destinations,
+                    selectedIndex: widget.selectedIndex,
+                    onTap: widget.onDestinationSelected,
+                    tint: CupertinoTheme.of(context).primaryColor,
+                    minimizeBehavior: widget.minimizeBehavior,
+                    hidden: widget.tabBarHidden,
+                    enableBlur: widget.enableBlur,
+                    fadeColor: widget.fadeColor,
+                  ),
                 ),
               ),
           ],

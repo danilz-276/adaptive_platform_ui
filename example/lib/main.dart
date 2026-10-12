@@ -1,7 +1,7 @@
+import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui_example/service/router/router_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 void main() {
@@ -21,7 +21,7 @@ class _AdaptivePlatformUIDemoState extends State<AdaptivePlatformUIDemo> {
   @override
   Widget build(BuildContext context) {
     return AdaptiveApp.router(
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.dark,
       title: 'Adaptive Platform UI',
       cupertinoLightTheme: CupertinoThemeData(brightness: Brightness.light),
       cupertinoDarkTheme: CupertinoThemeData(brightness: Brightness.dark),

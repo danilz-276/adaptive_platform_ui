@@ -25,6 +25,7 @@ class AdaptiveBottomNavigationBar {
     this.bottomNavigationBar,
     this.selectedItemColor,
     this.unselectedItemColor,
+    this.fadeColor,
   });
 
   /// Navigation items for bottom navigation bar
@@ -88,6 +89,11 @@ class AdaptiveBottomNavigationBar {
   /// If null, uses platform defaults.
   final Color? unselectedItemColor;
 
+  /// Custom base color for the iOS 26+ Liquid Glass gradient fade.
+  ///
+  /// When null, defaults to black in dark mode and white in light mode.
+  final Color? fadeColor;
+
   /// Creates a copy of this bottom navigation bar with the given fields replaced
   AdaptiveBottomNavigationBar copyWith({
     List<AdaptiveNavigationDestination>? items,
@@ -98,6 +104,7 @@ class AdaptiveBottomNavigationBar {
     Widget? bottomNavigationBar,
     Color? selectedItemColor,
     Color? unselectedItemColor,
+    Color? fadeColor,
   }) {
     return AdaptiveBottomNavigationBar(
       items: items ?? this.items,
@@ -108,6 +115,7 @@ class AdaptiveBottomNavigationBar {
       bottomNavigationBar: bottomNavigationBar ?? this.bottomNavigationBar,
       selectedItemColor: selectedItemColor ?? this.selectedItemColor,
       unselectedItemColor: unselectedItemColor ?? this.unselectedItemColor,
+      fadeColor: fadeColor ?? this.fadeColor,
     );
   }
 }

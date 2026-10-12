@@ -21,7 +21,7 @@ class _MainPageState extends State<MainPage> {
     return Stack(
       children: [
         AdaptiveScaffold(
-          minimizeBehavior: TabBarMinimizeBehavior.automatic,
+          minimizeBehavior: TabBarMinimizeBehavior.never,
           body: widget.navigationShell,
           bottomNavigationBar:
               getMatchedLocation(

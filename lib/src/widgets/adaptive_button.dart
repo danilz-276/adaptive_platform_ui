@@ -35,6 +35,7 @@ class AdaptiveButton extends StatelessWidget {
     this.enabled = true,
     this.useSmoothRectangleBorder = true,
     this.useNative = true,
+    this.isDark,
   }) : child = null,
        icon = null,
        iconColor = null,
@@ -54,6 +55,7 @@ class AdaptiveButton extends StatelessWidget {
     this.enabled = true,
     this.useSmoothRectangleBorder = true,
     this.useNative = true,
+    this.isDark,
   }) : label = null,
        textColor = null,
        icon = null,
@@ -75,6 +77,7 @@ class AdaptiveButton extends StatelessWidget {
     this.enabled = true,
     this.useSmoothRectangleBorder = true,
     this.useNative = true,
+    this.isDark,
   }) : label = null,
        textColor = null,
        child = null,
@@ -94,6 +97,7 @@ class AdaptiveButton extends StatelessWidget {
     this.enabled = true,
     this.useSmoothRectangleBorder = true,
     this.useNative = true,
+    this.isDark,
   }) : label = null,
        textColor = null,
        child = null,
@@ -156,6 +160,9 @@ class AdaptiveButton extends StatelessWidget {
   /// Android always uses Material button regardless of this setting
   final bool useNative;
 
+  /// Optional override for dark mode
+  final bool? isDark;
+
   @override
   Widget build(BuildContext context) {
     // iOS 26+ - Use native iOS 26 button design (only if useNative is true)
@@ -174,6 +181,7 @@ class AdaptiveButton extends StatelessWidget {
             borderRadius: borderRadius,
             minSize: minSize,
             useSmoothRectangleBorder: useSmoothRectangleBorder,
+            isDark: isDark,
           ),
         );
       }
@@ -191,6 +199,7 @@ class AdaptiveButton extends StatelessWidget {
             borderRadius: borderRadius,
             minSize: minSize,
             useSmoothRectangleBorder: useSmoothRectangleBorder,
+            isDark: isDark,
             child: child!,
           ),
         );
@@ -209,6 +218,7 @@ class AdaptiveButton extends StatelessWidget {
             borderRadius: borderRadius,
             minSize: minSize,
             useSmoothRectangleBorder: useSmoothRectangleBorder,
+            isDark: isDark,
             child: Icon(icon, color: iconColor, size: 24),
           ),
         );
@@ -228,6 +238,7 @@ class AdaptiveButton extends StatelessWidget {
           borderRadius: borderRadius,
           minSize: minSize,
           useSmoothRectangleBorder: useSmoothRectangleBorder,
+          isDark: isDark,
         ),
       );
     }

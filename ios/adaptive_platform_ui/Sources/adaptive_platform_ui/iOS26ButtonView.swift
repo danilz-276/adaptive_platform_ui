@@ -55,6 +55,7 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
         binaryMessenger messenger: FlutterBinaryMessenger
     ) {
         _view = UIView(frame: frame)
+        _view.backgroundColor = .clear
 
         // Extract configuration from arguments
         if let config = args as? [String: Any] {
@@ -88,6 +89,11 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
             buttonId = 0
         }
 
+        // Apply Flutter's brightness override before creating the button
+        if #available(iOS 13.0, *) {
+            _view.overrideUserInterfaceStyle = isDark ? .dark : .light
+        }
+
         // Setup method channel for communication
         channel = FlutterMethodChannel(
             name: "adaptive_platform_ui/ios26_button_\(buttonId)",
@@ -98,11 +104,6 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
 
         // Create the native button
         createNativeButton()
-
-        // Apply Flutter's brightness override
-        if #available(iOS 13.0, *) {
-            _view.overrideUserInterfaceStyle = isDark ? .dark : .light
-        }
 
         // Setup method call handler
         channel.setMethodCallHandler { [weak self] (call, result) in
@@ -118,6 +119,11 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
         // Create iOS button with system type
         button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
+        button.backgroundColor = .clear
+
+        if #available(iOS 13.0, *) {
+            button.overrideUserInterfaceStyle = isDark ? .dark : .light
+        }
 
         // Set tint color
         button.tintColor = buttonColor
@@ -399,7 +405,9 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
                 isDark = dark
                 if #available(iOS 13.0, *) {
                     _view.overrideUserInterfaceStyle = dark ? .dark : .light
+                    button?.overrideUserInterfaceStyle = dark ? .dark : .light
                 }
+                applyLiquidGlassStyle()
             }
             result(nil)
 

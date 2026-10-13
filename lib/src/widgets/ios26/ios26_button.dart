@@ -69,6 +69,7 @@ class IOS26Button extends StatefulWidget {
     this.borderRadius,
     this.minSize,
     this.useSmoothRectangleBorder = true,
+    this.isDark,
   }) : child = null,
        isChildMode = false,
        sfSymbol = null;
@@ -87,6 +88,7 @@ class IOS26Button extends StatefulWidget {
     this.borderRadius,
     this.minSize,
     this.useSmoothRectangleBorder = true,
+    this.isDark,
   }) : label = '',
        textColor = null,
        isChildMode = true,
@@ -105,6 +107,7 @@ class IOS26Button extends StatefulWidget {
     this.borderRadius,
     this.minSize,
     this.useSmoothRectangleBorder = true,
+    this.isDark,
   }) : label = '',
        textColor = null,
        child = null,
@@ -154,6 +157,9 @@ class IOS26Button extends StatefulWidget {
   /// Default is true for smooth rectangle, set to false for circular
   final bool useSmoothRectangleBorder;
 
+  /// Optional override for dark mode (defaults to Theme.of(context).brightness == Brightness.dark)
+  final bool? isDark;
+
   @override
   State<IOS26Button> createState() => _IOS26ButtonState();
 }
@@ -163,6 +169,10 @@ class _IOS26ButtonState extends State<IOS26Button> {
   late final int _id;
   late final MethodChannel _channel;
   bool? _lastIsDark;
+
+  bool get _isDark =>
+      widget.isDark ??
+      (MediaQuery.platformBrightnessOf(context) == Brightness.dark);
 
   @override
   void initState() {
@@ -185,7 +195,7 @@ class _IOS26ButtonState extends State<IOS26Button> {
   }
 
   Future<void> _syncBrightnessIfNeeded() async {
-    final isDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final isDark = _isDark;
     if (_lastIsDark != isDark) {
       try {
         await _channel.invokeMethod('setBrightness', {'isDark': isDark});
@@ -209,6 +219,10 @@ class _IOS26ButtonState extends State<IOS26Button> {
   @override
   void didUpdateWidget(IOS26Button oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.isDark != widget.isDark) {
+      _syncBrightnessIfNeeded();
+    }
 
     // Update native side if properties changed
     if (oldWidget.style != widget.style) {
@@ -265,7 +279,7 @@ class _IOS26ButtonState extends State<IOS26Button> {
       'textColor': widget.textColor != null
           ? _colorToHex(widget.textColor!)
           : null,
-      'isDark': MediaQuery.platformBrightnessOf(context) == Brightness.dark,
+      'isDark': _isDark,
       'useSmoothRectangleBorder': widget.useSmoothRectangleBorder,
       if (widget.sfSymbol != null) 'iconName': widget.sfSymbol!.name,
       if (widget.sfSymbol != null) 'iconSize': widget.sfSymbol!.size,

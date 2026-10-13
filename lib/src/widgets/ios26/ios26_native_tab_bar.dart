@@ -276,13 +276,16 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
             )
           : const SizedBox.shrink();
 
-      final h = widget.height ?? _intrinsicHeight ?? 50.0;
+      final bottomPadding = MediaQuery.of(context).padding.bottom;
+      final defaultHeight = 49.0 + bottomPadding;
+      final h = widget.height ?? _intrinsicHeight ?? defaultHeight;
       return SizedBox(height: h, child: platformView);
     }
 
     // Fallback for non-iOS
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
     return SizedBox(
-      height: widget.height ?? 50,
+      height: widget.height ?? (50.0 + bottomPadding),
       child: Container(
         color:
             widget.backgroundColor ??

@@ -422,9 +422,13 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         case "getIntrinsicSize":
             if let bar = self.tabBar {
                 let size = bar.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))
-                result(["width": Double(size.width), "height": Double(size.height)])
+                let bottomInset = self.container.window?.safeAreaInsets.bottom
+                    ?? self.container.safeAreaInsets.bottom
+                let totalHeight = size.height + bottomInset
+                result(["width": Double(size.width), "height": Double(totalHeight)])
             } else {
-                result(["width": Double(self.container.bounds.width), "height": 50.0])
+                let bottomInset = self.container.window?.safeAreaInsets.bottom ?? 0
+                result(["width": Double(self.container.bounds.width), "height": Double(50.0 + bottomInset)])
             }
 
         case "setItems":

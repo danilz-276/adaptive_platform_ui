@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
@@ -24,6 +25,8 @@ class IOS26NativeTabBar extends StatefulWidget {
     this.enableBlur = true,
     this.fadeColor,
     this.isDark,
+    this.maxWidth,
+    this.onHeightChanged,
   });
 
   final List<AdaptiveNavigationDestination> destinations;
@@ -51,6 +54,14 @@ class IOS26NativeTabBar extends StatefulWidget {
   /// Whether to enable native Liquid Glass blur effect behind the tab bar.
   final bool enableBlur;
 
+  /// Maximum width of the tab bar. When the available width is larger
+  /// (iPad, wide windows), the bar is centered instead of stretched.
+  final double? maxWidth;
+
+  /// Called with the total height (bar + bottom safe area) whenever it changes,
+  /// so the host can pad its content to match the native bar.
+  final ValueChanged<double>? onHeightChanged;
+
   /// Tab bar minimize behavior (iOS 26+)
   /// Controls how the tab bar minimizes when scrolling
   final TabBarMinimizeBehavior minimizeBehavior;
@@ -61,6 +72,7 @@ class IOS26NativeTabBar extends StatefulWidget {
 
 class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
   MethodChannel? _channel;
+  Timer? _selectionResyncTimer;
   int? _lastIndex;
   int? _lastTint;
   int? _lastUnselectedTint;
@@ -110,6 +122,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
 
   @override
   void dispose() {
+    _selectionResyncTimer?.cancel();
     _channel?.setMethodCallHandler(null);
     super.dispose();
   }
@@ -276,14 +289,24 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
             )
           : const SizedBox.shrink();
 
-      final bottomPadding = MediaQuery.of(context).padding.bottom;
-      final defaultHeight = 49.0 + bottomPadding;
-      final h = widget.height ?? _intrinsicHeight ?? defaultHeight;
-      return SizedBox(height: h, child: platformView);
+      final bottomPadding = MediaQuery.paddingOf(context).bottom;
+      final h = widget.height ?? ((_intrinsicHeight ?? 49.0) + bottomPadding);
+      _reportHeight(h);
+      final bar = SizedBox(height: h, child: platformView);
+      final maxWidth = widget.maxWidth;
+      if (maxWidth == null) return bar;
+      return Align(
+        alignment: Alignment.bottomCenter,
+        heightFactor: 1.0,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: bar,
+        ),
+      );
     }
 
     // Fallback for non-iOS
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
     return SizedBox(
       height: widget.height ?? (50.0 + bottomPadding),
       child: Container(
@@ -328,7 +351,8 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     final ch = MethodChannel('adaptive_platform_ui/ios26_tab_bar_$id');
     _channel = ch;
     ch.setMethodCallHandler(_onMethodCall);
-    _lastIndex = null;
+    _lastIndex = widget.selectedIndex;
+    _lastHidden = false;
     _lastTint = _effectiveTint != null ? _colorToARGB(_effectiveTint!) : null;
     _lastUnselectedTint = widget.unselectedItemTint != null
         ? _colorToARGB(widget.unselectedItemTint!)
@@ -343,21 +367,53 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     _lastIsRtl = _isRtl;
     _lastMinimizeBehavior = widget.minimizeBehavior;
     _lastEnableBlur = widget.enableBlur;
-    _requestIntrinsicSize();
     _cacheItems();
+    _requestIntrinsicSize();
+    // Native side was created from creationParams; only push what changed since.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _channel != ch) return;
-      _pushInitialStateToNative(ch);
+      _requestIntrinsicSize();
+      _syncBrightnessIfNeeded();
+      _syncPropsToNativeIfNeeded();
     });
   }
 
+  double? _lastReportedHeight;
+
+  void _reportHeight(double height) {
+    if (widget.onHeightChanged == null || _lastReportedHeight == height) return;
+    _lastReportedHeight = height;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onHeightChanged?.call(height);
+    });
+  }
+
+  Future<T?> _invoke<T>(MethodChannel ch, String method, [Object? args]) async {
+    if (_channel != ch) return null;
+    try {
+      return await ch.invokeMethod<T>(method, args);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<dynamic> _onMethodCall(MethodCall call) async {
+    if (call.method == 'intrinsicSizeChanged') {
+      _requestIntrinsicSize();
+      return null;
+    }
     if (call.method == 'valueChanged') {
       final args = call.arguments as Map?;
       final idx = (args?['index'] as num?)?.toInt();
       if (idx != null) {
+        // Native already shows the tapped tab. If the app ignores the tap
+        // (guards, locks) and never rebuilds, re-sync so both sides agree.
+        _lastIndex = null;
         widget.onTap(idx);
-        _lastIndex = idx;
+        _selectionResyncTimer?.cancel();
+        _selectionResyncTimer = Timer(const Duration(milliseconds: 400), () {
+          if (mounted) _syncPropsToNativeIfNeeded();
+        });
       }
     }
     return null;
@@ -380,8 +436,8 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
         : null;
 
     if (_lastIndex != idx) {
-      await ch.invokeMethod('setSelectedIndex', {'index': idx});
       _lastIndex = idx;
+      await _invoke(ch, 'setSelectedIndex', {'index': idx});
     }
 
     final style = <String, dynamic>{};
@@ -402,7 +458,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
       _lastFadeColor = fadeColor;
     }
     if (style.isNotEmpty) {
-      await ch.invokeMethod('setStyle', style);
+      await _invoke(ch, 'setStyle', style);
     }
 
     // Items update (for hot reload or dynamic changes)
@@ -428,7 +484,16 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
         _lastNetworkIcons?.join('|') != networkIcons.join('|') ||
         _lastSelectedNetworkIcons?.join('|') !=
             selectedNetworkIcons.join('|')) {
-      await ch.invokeMethod('setItems', {
+      _lastLabels = labels;
+      _lastSymbols = symbols;
+      _lastSelectedSymbols = selectedSymbols;
+      _lastAssetIcons = assetIcons;
+      _lastSelectedAssetIcons = selectedAssetIcons;
+      _lastFileIcons = fileIcons;
+      _lastSelectedFileIcons = selectedFileIcons;
+      _lastNetworkIcons = networkIcons;
+      _lastSelectedNetworkIcons = selectedNetworkIcons;
+      await _invoke(ch, 'setItems', {
         'labels': labels,
         'sfSymbols': symbols,
         'selectedSfSymbols': selectedSymbols,
@@ -445,15 +510,6 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
         'badgeTextColors': _mapBadgeTextColors(),
         'selectedIndex': widget.selectedIndex,
       });
-      _lastLabels = labels;
-      _lastSymbols = symbols;
-      _lastSelectedSymbols = selectedSymbols;
-      _lastAssetIcons = assetIcons;
-      _lastSelectedAssetIcons = selectedAssetIcons;
-      _lastFileIcons = fileIcons;
-      _lastSelectedFileIcons = selectedFileIcons;
-      _lastNetworkIcons = networkIcons;
-      _lastSelectedNetworkIcons = selectedNetworkIcons;
       _requestIntrinsicSize();
     }
 
@@ -468,24 +524,24 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
         _lastBadgeTexts?.join('|') != currentBadgeTexts.join('|') ||
         _lastBadgeColors?.join('|') != currentBadgeColors.join('|') ||
         _lastBadgeTextColors?.join('|') != currentBadgeTextColors.join('|')) {
-      await ch.invokeMethod('setBadgeCounts', {
+      _lastBadgeCounts = currentBadgeCounts;
+      _lastBadgeTexts = currentBadgeTexts;
+      _lastBadgeColors = currentBadgeColors;
+      _lastBadgeTextColors = currentBadgeTextColors;
+      await _invoke(ch, 'setBadgeCounts', {
         'badgeCounts': currentBadgeCounts,
         'badgeTexts': currentBadgeTexts,
         'badgeColors': currentBadgeColors,
         'badgeTextColors': currentBadgeTextColors,
       });
-      _lastBadgeCounts = currentBadgeCounts;
-      _lastBadgeTexts = currentBadgeTexts;
-      _lastBadgeColors = currentBadgeColors;
-      _lastBadgeTextColors = currentBadgeTextColors;
     }
 
     // Minimize behavior update
     if (_lastMinimizeBehavior != widget.minimizeBehavior) {
-      await ch.invokeMethod('setMinimizeBehavior', {
+      _lastMinimizeBehavior = widget.minimizeBehavior;
+      await _invoke(ch, 'setMinimizeBehavior', {
         'behavior': widget.minimizeBehavior.index,
       });
-      _lastMinimizeBehavior = widget.minimizeBehavior;
     }
 
     // Hidden state update
@@ -493,8 +549,8 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
 
     // Blur state update
     if (_lastEnableBlur != widget.enableBlur) {
-      await ch.invokeMethod('setEnableBlur', {'enableBlur': widget.enableBlur});
       _lastEnableBlur = widget.enableBlur;
+      await _invoke(ch, 'setEnableBlur', {'enableBlur': widget.enableBlur});
     }
   }
 
@@ -503,8 +559,8 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     if (ch == null) return;
     final isDark = _isDark;
     if (_lastIsDark != isDark) {
-      await ch.invokeMethod('setBrightness', {'isDark': isDark});
       _lastIsDark = isDark;
+      await _invoke(ch, 'setBrightness', {'isDark': isDark});
     }
   }
 
@@ -513,8 +569,8 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     if (ch == null) return;
     final isRtl = _isRtl;
     if (_lastIsRtl != isRtl) {
-      await ch.invokeMethod('setDirectionality', {'isRtl': isRtl});
       _lastIsRtl = isRtl;
+      await _invoke(ch, 'setDirectionality', {'isRtl': isRtl});
     }
   }
 
@@ -539,8 +595,8 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     if (ch == null) return;
     final hidden = widget.hidden;
     if (_lastHidden == hidden) return;
-    await ch.invokeMethod('setHidden', {'hidden': hidden});
     _lastHidden = hidden;
+    await _invoke(ch, 'setHidden', {'hidden': hidden});
   }
 
   Future<void> _requestIntrinsicSize() async {
@@ -548,70 +604,10 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     final ch = _channel;
     if (ch == null) return;
     try {
-      final size = await ch.invokeMethod<Map>('getIntrinsicSize');
+      final size = await _invoke<Map>(ch, 'getIntrinsicSize');
       final h = (size?['height'] as num?)?.toDouble();
-      if (!mounted) return;
-      setState(() {
-        if (h != null && h > 0) _intrinsicHeight = h;
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _pushInitialStateToNative(MethodChannel ch) async {
-    final labels = widget.destinations.map((e) => e.label).toList();
-    final symbols = _mapSymbols();
-    final selectedSymbols = _mapSelectedSymbols();
-    final assetIcons = _mapAssetIcons();
-    final selectedAssetIcons = _mapSelectedAssetIcons();
-    final fileIcons = _mapFileIcons();
-    final selectedFileIcons = _mapSelectedFileIcons();
-    final networkIcons = _mapNetworkIcons();
-    final selectedNetworkIcons = _mapSelectedNetworkIcons();
-    final searchFlags = widget.destinations.map((e) => e.isSearch).toList();
-    final badgeCounts = widget.destinations.map((e) => e.badgeCount).toList();
-
-    try {
-      await ch.invokeMethod('setEnableBlur', {'enableBlur': widget.enableBlur});
-      await ch.invokeMethod('setItems', {
-        'labels': labels,
-        'sfSymbols': symbols,
-        'selectedSfSymbols': selectedSymbols,
-        'assetIcons': assetIcons,
-        'selectedAssetIcons': selectedAssetIcons,
-        'fileIcons': fileIcons,
-        'selectedFileIcons': selectedFileIcons,
-        'networkIcons': networkIcons,
-        'selectedNetworkIcons': selectedNetworkIcons,
-        'searchFlags': searchFlags,
-        'badgeCounts': badgeCounts,
-        'badgeTexts': _mapBadgeTexts(),
-        'badgeColors': _mapBadgeColors(),
-        'badgeTextColors': _mapBadgeTextColors(),
-        'selectedIndex': widget.selectedIndex,
-      });
-
-      final style = <String, dynamic>{};
-      if (_effectiveTint != null) {
-        style['tint'] = _colorToARGB(_effectiveTint!);
-      }
-      if (widget.unselectedItemTint != null) {
-        style['unselectedItemTint'] = _colorToARGB(widget.unselectedItemTint!);
-      }
-      if (widget.backgroundColor != null) {
-        style['backgroundColor'] = _colorToARGB(widget.backgroundColor!);
-      }
-      if (widget.fadeColor != null) {
-        style['fadeColor'] = _colorToARGB(widget.fadeColor!);
-      }
-      if (style.isNotEmpty) {
-        await ch.invokeMethod('setStyle', style);
-      }
-
-      await ch.invokeMethod('setSelectedIndex', {
-        'index': widget.selectedIndex,
-      });
-      _lastIndex = widget.selectedIndex;
-      await _requestIntrinsicSize();
+      if (!mounted || h == null || h <= 0 || h == _intrinsicHeight) return;
+      setState(() => _intrinsicHeight = h);
     } catch (_) {}
   }
 }

@@ -78,15 +78,17 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         } else {
             value = nil
         }
-        item.badgeValue = value
-        item.badgeColor = colorARGB != nil ? colorFromARGB(colorARGB!) : nil
-        if let argb = textColorARGB {
-            let attrs: [NSAttributedString.Key: Any] = [.foregroundColor: colorFromARGB(argb)]
+        // Only touch properties that changed: each assignment triggers a relayout.
+        if item.badgeValue != value { item.badgeValue = value }
+        let color = colorARGB != nil ? colorFromARGB(colorARGB!) : nil
+        if item.badgeColor != color { item.badgeColor = color }
+
+        let textColor = textColorARGB != nil ? colorFromARGB(textColorARGB!) : nil
+        let currentTextColor = item.badgeTextAttributes(for: .normal)?[.foregroundColor] as? UIColor
+        if currentTextColor != textColor {
+            let attrs: [NSAttributedString.Key: Any]? = textColor != nil ? [.foregroundColor: textColor!] : nil
             item.setBadgeTextAttributes(attrs, for: .normal)
             item.setBadgeTextAttributes(attrs, for: .selected)
-        } else {
-            item.setBadgeTextAttributes(nil, for: .normal)
-            item.setBadgeTextAttributes(nil, for: .selected)
         }
     }
 
@@ -692,9 +694,9 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         let baseColor = self.fadeColor ?? (isDarkMode ? UIColor.black : UIColor.white)
 
         container.gradientLayer?.colors = [
-            baseColor.withAlphaComponent(0.82).cgColor,
-            baseColor.withAlphaComponent(0.7).cgColor,
-            baseColor.withAlphaComponent(0.4).cgColor,
+            baseColor.withAlphaComponent(0.92).cgColor,
+            baseColor.withAlphaComponent(0.78).cgColor,
+            baseColor.withAlphaComponent(0.42).cgColor,
             baseColor.withAlphaComponent(0.0).cgColor,
         ]
         container.gradientLayer?.locations = [0.0, 0.4, 0.8, 1.0]
